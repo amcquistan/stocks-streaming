@@ -1,0 +1,47 @@
+[
+  {
+    "symbol": "MSFT",
+    "short_name": "Microsoft Corporation",
+    "market_time": 1617724485,
+    "quote_source": "Delayed Quote",
+    "current": 249.14,
+    "low_day": 246.88,
+    "high_day": 249.3999,
+    "bid": 248.65,
+    "ask": 248.67,
+    "open": 247.61,
+    "previous_close": 249.07,
+    "low_52wk": 162.3,
+    "high_52wk": 249.96
+  },
+  {
+    "symbol": "MSFT",
+    "short_name": "Microsoft Corporation",
+    "market_time": 1617739202,
+    "quote_source": "Delayed Quote",
+    "current": 247.86,
+    "low_day": 246.88,
+    "high_day": 249.3999,
+    "bid": 248.03,
+    "ask": 248.2,
+    "open": 247.61,
+    "previous_close": 249.07,
+    "low_52wk": 162.3,
+    "high_52wk": 249.96
+  },
+  {
+    "symbol": "AMZN",
+    "short_name": "Amazon.com, Inc.",
+    "market_time": 1617739203,
+    "quote_source": "Nasdaq Real Time Price",
+    "current": 3223.82,
+    "low_day": 3217.06,
+    "high_day": 3247.31,
+    "bid": 3225.01,
+    "ask": 3227.99,
+    "open": 3223.75,
+    "previous_close": 3226.73,
+    "low_52wk": 2011.15,
+    "high_52wk": 3552.25
+  }
+]

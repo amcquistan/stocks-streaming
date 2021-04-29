@@ -1,0 +1,240 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'sam-stock-streaming-kinesis-lambda
+
+  Sample SAM Template for sam-stock-streaming-kinesis-lambda
+
+  '
+Parameters:
+  CreationDate:
+    Type: String
+    AllowedPattern: ^\d{4}(-\d{2}){2}$
+  StocksHost:
+    Type: String
+  StocksApiKey:
+    Type: String
+  TciStocksBucketName:
+    Type: String
+    Default: tci-stocks-stream-kinesis-lambda
+  StreamName:
+    Type: String
+    Default: tci-stocks-stream
+  DeliveryStreamName:
+    Type: String
+    Default: tci-stocks-delivery-stream
+  StocksSnsTopicName:
+    Type: String
+    Default: tci-stocks-alert-topic
+  SnsSubscriptionEmail:
+    Type: String
+Resources:
+  TciStocksStreamBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: Private
+      BucketName:
+        Ref: TciStocksBucketName
+      Tags:
+      - Key: Name
+        Value:
+          Fn::Sub: ${AWS::StackName}-bucket
+      - Key: Created
+        Value:
+          Ref: CreationDate
+  StockAlertsSnsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName:
+        Ref: StocksSnsTopicName
+      Subscription:
+      - Endpoint:
+          Ref: SnsSubscriptionEmail
+        Protocol: email
+      Tags:
+      - Key: Name
+        Value:
+          Fn::Sub: ${AWS::StackName}-sns-topic
+      - Key: Created
+        Value:
+          Ref: CreationDate
+  KinesisStocksStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name:
+        Ref: StreamName
+      ShardCount: 2
+      Tags:
+      - Key: Name
+        Value:
+          Fn::Sub: ${AWS::StackName}-stocks-stream
+      - Key: Created
+        Value:
+          Ref: CreationDate
+  StocksProducerFunction:
+    Type: AWS::Serverless::Function
+    DependsOn:
+    - TciStocksStreamBucket
+    - KinesisStocksStream
+    Properties:
+      CodeUri: s3://tci-sam-code/stock-streaming/8a8364bdacd6c6064d745d0779072ba7
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          KINESIS_STREAM:
+            Ref: ''
+          S3_BUCKET:
+            Ref: TciStocksStreamBucket
+          STOCKS_S3KEY: stocks/stocks.json
+          YAHOO_QUOTES_URL: https://apidojo-yahoo-finance-v1.p.rapidapi.com/market/v2/get-quotes
+          YAHOO_X_RAPIDAPI_HOST:
+            Ref: StocksHost
+          YAHOO_X_RAPIDAPI_KEY:
+            Ref: StocksApiKey
+      Policies:
+      - S3ReadPolicy:
+          BucketName:
+            Ref: TciStocksStreamBucket
+      - KinesisCrudPolicy:
+          StreamName:
+            Ref: KinesisStocksStream
+      Events:
+        StocksFetchSchedule:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 minutes)
+            Name: stocks_data_fetch_schedule
+            Enabled: false
+      Tags:
+        Name:
+          Fn::Sub: ${AWS::StackName}-producer-function
+        Created:
+          Ref: CreationDate
+  StocksProcessorFunction:
+    Type: AWS::Serverless::Function
+    DependsOn:
+    - KinesisStocksStream
+    - TciStocksStreamBucket
+    - StockAlertsSnsTopic
+    Properties:
+      CodeUri: s3://tci-sam-code/stock-streaming/a0018ecf100948f10bf23c45ad14716a
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Timeout: 180
+      MemorySize: 512
+      Environment:
+        Variables:
+          S3_BUCKET:
+            Ref: TciStocksStreamBucket
+          OUTPUT_S3PREFIX: lambda-processed-stocks
+          SNS_TOPIC:
+            Ref: StockAlertsSnsTopic
+      Policies:
+      - S3CrudPolicy:
+          BucketName:
+            Ref: TciStocksStreamBucket
+      - SNSPublishMessagePolicy:
+          TopicName:
+            Ref: StockAlertsSnsTopic
+      Events:
+        StreamEvent:
+          Type: Kinesis
+          Properties:
+            Stream:
+              Fn::GetAtt:
+              - KinesisStocksStream
+              - Arn
+            BatchSize: 10
+            MaximumBatchingWindowInSeconds: 45
+            StartingPosition: TRIM_HORIZON
+            Enabled: true
+            TumblingWindowInSeconds: 120
+            MaximumRetryAttempts: 2
+      Tags:
+        Name:
+          Fn::Sub: ${AWS::StackName}-processor-function
+        Created:
+          Ref: CreationDate
+  DeliveryStreamRole:
+    Type: AWS::IAM::Role
+    DependsOn:
+    - TciStocksStreamBucket
+    - KinesisStocksStream
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - firehose.amazonaws.com
+          Action:
+          - sts:AssumeRole
+          Condition:
+            StringEquals:
+              sts:ExternalId:
+                Ref: AWS::AccountId
+      Path: /
+      Policies:
+      - PolicyName:
+          Fn::Sub: ${AWS::StackName}-delivery-role-policy
+        PolicyDocument:
+        - Effect: Allow
+          Action:
+          - s3:AbortMultipartUpload
+          - s3:GetBucketLocation
+          - s3:GetObject
+          - s3:ListBucket
+          - s3:ListBucketMultipartUploads
+          - s3:PutObject
+          - kinesis:DescribeStream
+          - kinesis:GetShardIterator
+          - kinesis:GetRecords
+          Resource:
+          - Fn::Sub: arn:aws:s3:::${TciStocksStreamBucket}
+          - Fn::Sub: arn:aws:s3:::${TciStocksStreamBucket}/*
+          - Fn::GetAtt:
+            - KinesisStocksStream
+            - Arn
+  StocksDeliveryStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    DependsOn:
+    - TciStocksStreamBucket
+    - KinesisStocksStream
+    - DeliveryStreamRole
+    Properties:
+      DeliveryStreamName:
+        Ref: DeliveryStreamName
+      DeliveryStreamType: KinesisStreamAsSource
+      KinesisStreamSourceConfiguration:
+        KinesisStreamARN:
+          Fn::GetAtt:
+          - KinesisStocksStream
+          - Arn
+        RoleArn:
+          Fn::GetAtt:
+          - DeliveryStreamRole
+          - Arn
+      ExtendedS3DestinationConfiguration:
+        BucketARN:
+          Fn::GetAtt:
+          - TciStocksStreamBucket
+          - Arn
+        BufferingHints:
+          IntervalInSeconds: 120
+          SizeInMB: 50
+        CompressionFormat: GZIP
+        Prefix: stocks-raw/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/hour=!{timestamp:HH}/
+        ErrorOutputPrefix: stocks-raw-errors/!{firehose:error-output-type}/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/hour=!{timestamp:HH}/
+        RoleARN:
+          Fn::GetAtt:
+          - DeliveryStreamRole
+          - Arn
+      Tags:
+      - Key: Name
+        Value:
+          Fn::Sub: ${AWS::StackName}-stocks-firehose
+      - Key: Created
+        Value:
+          Ref: CreationDate
