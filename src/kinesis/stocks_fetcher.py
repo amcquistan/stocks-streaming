@@ -8,7 +8,7 @@ import requests
 from dotenv import load_dotenv
 
 DOT_ENVPATH = os.path.join(
-  os.path.dirname(os.path.abspath('.')),
+  os.path.dirname(os.path.dirname(os.path.abspath('.'))),
   '.env'
 )
 print(DOT_ENVPATH)
